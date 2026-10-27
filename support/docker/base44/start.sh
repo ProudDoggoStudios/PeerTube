@@ -35,4 +35,14 @@ fi
 
 pnpm install --frozen-lockfile
 
+# The API serves the client static files from client/dist
+# (server/core/controllers/client.ts), and the dev workflow only copies the
+# locales there (scripts/dev/server.sh) while the production server build also
+# copies the assets (scripts/build/server.sh). Without this copy the default
+# instance logos, built as absolute
+# webserver.hostname/client/assets/images/... URLs, answer 404.
+mkdir -p client/dist
+rm -rf client/dist/assets
+cp -r client/src/assets client/dist/assets
+
 exec npm run dev
