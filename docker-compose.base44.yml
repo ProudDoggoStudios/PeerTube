@@ -100,6 +100,21 @@ services:
       retries: 5
       start_period: 900s
 
+  # Serves the self-contained archive written by
+  # support/docker/base44/make-bundle.sh so it can be downloaded from the preview
+  # host (https://8080-<preview host>/peertube-local.zip). Plain static file
+  # server, independent from the app.
+  downloads:
+    image: nginx:alpine
+    restart: on-failure
+    labels:
+      base44.kind: infra
+      base44.port: "8080"
+    ports:
+      - "8080:80" # archive download, outside the peerTube dev servers
+    volumes:
+      - ./backups/bundles:/usr/share/nginx/html:ro
+
 volumes:
   postgres-data:
   pnpm-store:

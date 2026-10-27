@@ -463,6 +463,14 @@ Non-obvious points:
   `backups/peertube-state-<UTC timestamp>.tar.gz` (`/backups` is gitignored). Restore with
   `docker compose -f docker-compose.base44.yml exec -T postgres psql -U peertube -d peertube_dev < database-<stamp>.sql`
   and by copying the archive's `storage/` tree back over the checkout's `storage/`.
+- `sh support/docker/base44/make-bundle.sh` writes a self-contained copy of the instance to
+  `backups/bundles/peertube-local.zip`: the source tree without `node_modules`, `.git`, builds and
+  plugin installs, plus `config/local-dev.json` rewritten to `webserver.hostname=localhost:9000`,
+  Windows/macOS/Linux launchers and `START-HERE.md`. The `downloads` compose service (nginx, host
+  port 8080) serves that directory, so the archive is reachable at
+  `https://8080-$BASE44_PUBLIC_HOST_SUFFIX/peertube-local.zip`. It is not committed
+  (`/backups` is gitignored), holds no database, and must be regenerated after the instance
+  settings or the setup change.
 - Development credentials: `root` / `test`.
 - Repository checks run inside the app container, for example
   `docker compose -f docker-compose.base44.yml exec peertube sh -c 'npm run build:server'`
