@@ -22,6 +22,8 @@ node_modules
 
 # PeerTube
 /storage
+# Base44 sandbox state snapshots (support/docker/base44/backup.sh)
+/backups
 /dev1
 /config/production.yaml
 /config/local*

@@ -425,12 +425,20 @@ live-reloaded instead of baked into an image.
 
 Non-obvious points:
 
-- `support/docker/base44/start.sh` rewrites `config/local-dev.json` (gitignored, the
-  documented way to override the configuration locally) on every start. Besides pointing
-  `database.hostname` and `redis.hostname` at the compose services, it sets
-  `webserver.hostname`/`port`/`https` to the sandbox proxy address of port 9000. Without
-  that, the API builds absolute URLs (HLS playlists and segments, thumbnails, downloads,
-  tracker) with `localhost:9000`, which the browser of a remote sandbox cannot reach.
+- `support/docker/base44/start.sh` seeds `config/local-dev.json` (gitignored, the documented
+  way to override the configuration locally) from `support/docker/base44/instance-config.json`
+  when it is missing, then merges the sandbox wiring into it: `database.hostname` and
+  `redis.hostname` point at the compose services, `webserver.hostname`/`port`/`https` at the
+  sandbox proxy address of port 9000. Without the latter the API builds absolute URLs (HLS
+  playlists and segments, thumbnails, downloads, tracker) with `localhost:9000`, which the
+  browser of a remote sandbox cannot reach. Every other key of the file is kept: it must
+  never be overwritten as a whole.
+- `config/local-dev.json` also holds the instance identity and settings (name, descriptions,
+  terms, policies, signup, transcoding, live) because that is where PeerTube reads them from
+  when the admin UI was not used (the DB `application.configPart` stays empty then).
+  `support/docker/base44/instance-config.json` is the committed copy of those settings, so a
+  recreated sandbox gets them back; keep the two in sync when the identity changes, otherwise
+  a fresh sandbox falls back to the older committed values.
 - The API serves the client static files from `client/dist` (`server/core/controllers/client.ts`),
   and the dev workflow copies only the locales there (`scripts/dev/server.sh`) while the
   production server build also copies the assets (`scripts/build/server.sh`). `start.sh` does
@@ -445,6 +453,16 @@ Non-obvious points:
 - Local configuration stays out of the repository: the database/Redis credentials are the
   development ones of `config/default.yaml` (peertube / peertube, `peertube_dev`), and
   `secrets.peertube` comes from `config/dev.yaml`. No external credentials are required.
+- Instance state is not in git: users, channels, videos and uploaded logos/avatars live in the
+  `app_postgres-data` Docker volume and in `storage/` (bind mount, gitignored), while the
+  instance settings live in `config/local-dev.json` (see above). All of it survives container
+  restarts and periods with nobody viewing the preview; only a recreated sandbox loses it, and
+  the sandbox is a development environment, not a long-term host.
+- `sh support/docker/base44/backup.sh` snapshots the database, `storage/` and
+  `config/local-dev.json` into
+  `backups/peertube-state-<UTC timestamp>.tar.gz` (`/backups` is gitignored). Restore with
+  `docker compose -f docker-compose.base44.yml exec -T postgres psql -U peertube -d peertube_dev < database-<stamp>.sql`
+  and by copying the archive's `storage/` tree back over the checkout's `storage/`.
 - Development credentials: `root` / `test`.
 - Repository checks run inside the app container, for example
   `docker compose -f docker-compose.base44.yml exec peertube sh -c 'npm run build:server'`
