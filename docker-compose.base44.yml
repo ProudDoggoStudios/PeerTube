@@ -1,0 +1,120 @@
+# Base44 sandbox environment for PeerTube.
+#
+# It runs the repository's own development workflow from the bind-mounted
+# checkout (`npm run dev` -> scripts/dev/index.sh: Angular dev server on port
+# 3000 + Express API on port 9000, with PostgreSQL, Redis and FFmpeg), so source
+# edits are live-reloaded instead of baked into an image.
+#
+# Not a production setup: see support/docker/production for that.
+services:
+  postgres:
+    image: postgres:16
+    restart: on-failure
+    labels:
+      base44.kind: infra
+    environment:
+      # Local development credentials, identical to database.username/password
+      # of config/default.yaml. Not published outside the compose network.
+      POSTGRES_USER: peertube
+      POSTGRES_PASSWORD: peertube
+      POSTGRES_DB: peertube_dev
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U peertube -d peertube_dev" ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  redis:
+    image: redis:7
+    restart: on-failure
+    labels:
+      base44.kind: infra
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot: PostgreSQL extensions used by PeerTube search. PeerTube's
+  # migrations do not create them (support/docker/gitpod/setup_postgres.sql does
+  # the same thing for the Gitpod dev environment).
+  db-init:
+    image: postgres:16
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: peertube
+    command:
+      - sh
+      - -ec
+      - >-
+        psql -h postgres -U peertube -d peertube_dev -v ON_ERROR_STOP=1 -c
+        'CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS unaccent;'
+
+  peertube:
+    build:
+      context: .
+      dockerfile: support/docker/base44/Dockerfile
+    restart: on-failure
+    labels:
+      base44.project: PeerTube
+      base44.kind: web
+      base44.port: "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+    ports:
+      - "3000:3000" # Angular client dev server: the preview entry point
+      - "9000:9000" # PeerTube API, proxied by the client dev server
+    environment:
+      - BASE44_PREVIEW_MODE
+      # Public hostname of the sandbox proxy, used by start.sh to build the
+      # instance URL (webserver.hostname) of the local config override.
+      - BASE44_PUBLIC_HOST_SUFFIX
+      - __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+      - CI=true
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: [ "sh", "support/docker/base44/start.sh" ]
+    healthcheck:
+      # Both dev servers of this container are checked, and the message says
+      # which one is missing.
+      test:
+        - CMD-SHELL
+        - >-
+          curl -sf -o /dev/null http://127.0.0.1:9000/api/v1/config ||
+          { echo "PeerTube API (port 9000) is not responding"; exit 1; };
+          curl -sf -o /dev/null http://127.0.0.1:3000/ ||
+          { echo "PeerTube client dev server (port 3000) is not responding"; exit 1; }
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 900s
+
+  # Serves the self-contained archive written by
+  # support/docker/base44/make-bundle.sh so it can be downloaded from the preview
+  # host (https://8080-<preview host>/peertube-local.zip). Plain static file
+  # server, independent from the app.
+  downloads:
+    image: nginx:alpine
+    restart: on-failure
+    labels:
+      base44.kind: infra
+      base44.port: "8080"
+    ports:
+      - "8080:80" # archive download, outside the peerTube dev servers
+    volumes:
+      - ./backups/bundles:/usr/share/nginx/html:ro
+
+volumes:
+  postgres-data:
+  pnpm-store:
