@@ -413,3 +413,36 @@ Export to Jaeger (tracing) or Prometheus (metrics) is configurable in
   — Library / business-logic documentation
 - [SECURITY.md](SECURITY.md) — Vulnerability disclosure policy
 - [FAQ.md](FAQ.md) — Frequently asked questions
+
+## Base44 sandbox environment
+
+`docker-compose.base44.yml` runs the repository's own development workflow
+(`npm run dev` → `scripts/dev/index.sh`: Angular dev server on port 3000, Express API on
+port 9000) from the bind-mounted checkout, with PostgreSQL, Redis and FFmpeg. The image
+(`support/docker/base44/Dockerfile`) only holds the OS-level dependencies; JavaScript
+dependencies are installed from `pnpm-lock.yaml` at container start, so edits are
+live-reloaded instead of baked into an image.
+
+Non-obvious points:
+
+- `support/docker/base44/start.sh` rewrites `config/local-dev.json` (gitignored, the
+  documented way to override the configuration locally) on every start. Besides pointing
+  `database.hostname` and `redis.hostname` at the compose services, it sets
+  `webserver.hostname`/`port`/`https` to the sandbox proxy address of port 9000. Without
+  that, the API builds absolute URLs (HLS playlists and segments, thumbnails, downloads,
+  tracker) with `localhost:9000`, which the browser of a remote sandbox cannot reach.
+- PeerTube expects the `pg_trgm` and `unaccent` PostgreSQL extensions in a dev database and
+  its migrations do not create them: the one-shot `db-init` compose service does it
+  (mirroring `support/docker/gitpod/setup_postgres.sql`).
+- Local configuration stays out of the repository: the database/Redis credentials are the
+  development ones of `config/default.yaml` (peertube / peertube, `peertube_dev`), and
+  `secrets.peertube` comes from `config/dev.yaml`. No external credentials are required.
+- Development credentials: `root` / `test`.
+- Repository checks run inside the app container, for example
+  `docker compose -f docker-compose.base44.yml exec peertube sh -c 'npm run build:server'`
+  or `... 'npm run lint'`; tests need `npm run clean:server:test` first (see Testing above).
+- Verifying video playback in an automated browser is not possible: the player and the HLS
+  manifest request work (the manifest answers 200 on the API host), but the browser refuses
+  to start playback because a scripted click does not grant user activation
+  (`video.play()` rejects with `NotAllowedError`). Playback has to be checked by hand in the
+  preview.

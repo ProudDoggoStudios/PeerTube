@@ -3,6 +3,9 @@ node_modules
 *npm-debug.log
 *-ci.log
 
+# pnpm store created next to node_modules when it is not on the store drive
+/.pnpm-store
+
 # Testing
 /test1/
 /test2/
